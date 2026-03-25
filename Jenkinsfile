@@ -13,6 +13,8 @@ pipeline {
     REPORTS_DIR = "reports"
     SONAR_HOST_URL = "http://13.235.95.236:9000"
     SONAR_PROJECT_KEY = "python-cicd-demo"
+    NEXUS_REGISTRY = "10.0.13.79:8082"
+    IMAGE_NAME = "python-cicd-demo"
   }
 
   stages {
@@ -96,19 +98,7 @@ pipeline {
       }
     }
 
-    stage('Docker Build') {
-      steps {
-        script {
-          env.GIT_SHA = sh(script: "git rev-parse --short HEAD", returnStdout: true).trim()
-          env.IMAGE_TAG = "${BUILD_NUMBER}-${GIT_SHA}"
-        }
-        sh '''
-          set -e
-          docker build -t ${IMAGE_NAME}:${IMAGE_TAG} .
-        '''
-      }
-    }
-
+    
     stage('k6 Performance Test') {
       steps {
         sh '''
@@ -129,6 +119,20 @@ pipeline {
         '''
       }
     }
+
+
+    stage('Docker Build') {
+  steps {
+    script {
+      env.GIT_SHA = sh(script: "git rev-parse --short HEAD", returnStdout: true).trim()
+      env.TAG = "${env.BUILD_NUMBER}-${env.GIT_SHA}"
+    }
+    sh '''#!/bin/bash
+      set -e
+      docker build -t ${IMAGE_NAME}:${TAG} .
+    '''
+  }
+}
 
     stage('SonarQube Scan') {
   when { expression { return !params.SKIP_SONAR } }
@@ -170,7 +174,31 @@ pipeline {
         }
       }
     }
+
+    stage('Push to Nexus') {
+  steps {
+    withCredentials([usernamePassword(credentialsId: 'nexus-docker',
+      usernameVariable: 'NEXUS_USER',
+      passwordVariable: 'NEXUS_PASS')]) {
+
+      sh '''#!/bin/bash
+        set -e
+
+        echo "$NEXUS_PASS" | docker login -u "$NEXUS_USER" --password-stdin ${NEXUS_REGISTRY}
+
+        # Tag as registry/image:tag (no repo name in path)
+        docker tag ${IMAGE_NAME}:${TAG} ${NEXUS_REGISTRY}/${IMAGE_NAME}:${TAG}
+
+        docker push ${NEXUS_REGISTRY}/${IMAGE_NAME}:${TAG}
+
+        docker logout ${NEXUS_REGISTRY} || true
+      '''
+    }
   }
+}	
+  }
+
+    
 
   post {
     success {
