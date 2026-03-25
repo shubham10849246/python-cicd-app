@@ -159,13 +159,13 @@ pipeline {
       }
     }
 
+    
     stage('SonarQube Scan') {
   steps {
     withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
-      sh '''
-        set -euxo pipefail
+      sh(label: 'Sonar Scan', script: '''#!/bin/bash
+        set -euo pipefail
 
-        # Sonar scanner via docker (no local install needed)
         docker run --rm \
           -e SONAR_HOST_URL=${SONAR_HOST_URL} \
           -e SONAR_TOKEN=${SONAR_TOKEN} \
@@ -175,7 +175,7 @@ pipeline {
           -Dsonar.sources=src \
           -Dsonar.tests=tests \
           -Dsonar.python.coverage.reportPaths=reports/coverage.xml
-      '''
+      ''')
     }
   }
 }
