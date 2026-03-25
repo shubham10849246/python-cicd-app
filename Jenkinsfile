@@ -162,18 +162,22 @@ pipeline {
     
     stage('SonarQube Scan') {
   steps {
-    withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
+    // IMPORTANT: This wrapper is required for waitForQualityGate()
+    withSonarQubeEnv('sonar') {
       sh(label: 'Sonar Scan', script: '''#!/bin/bash
         set -euo pipefail
 
+        # SONAR_HOST_URL and SONAR_AUTH_TOKEN are provided by withSonarQubeEnv()
+        # We pass them into docker sonar-scanner container.
         docker run --rm \
-          -e SONAR_HOST_URL=${SONAR_HOST_URL} \
-          -e SONAR_TOKEN=${SONAR_TOKEN} \
+          -e SONAR_HOST_URL="$SONAR_HOST_URL" \
+          -e SONAR_TOKEN="$SONAR_AUTH_TOKEN" \
           -v "$WORKSPACE:/usr/src" \
-          sonarsource/sonar-scanner-cli \
+          sonarsource/sonar-scanner-cli:latest \
           -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
           -Dsonar.sources=src \
           -Dsonar.tests=tests \
+          -Dsonar.python.version=3.10 \
           -Dsonar.python.coverage.reportPaths=reports/coverage.xml
       ''')
     }
@@ -183,11 +187,11 @@ pipeline {
 stage('Quality Gate') {
   steps {
     timeout(time: 5, unit: 'MINUTES') {
+      // abortPipeline:true makes job FAIL if gate FAILS
       waitForQualityGate abortPipeline: true
     }
   }
 }
-  }
 
   post {
     success {
