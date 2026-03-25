@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+.pytest_cache/
+.coverage
+coverage.xml
+
+# Virtual env
+.venv/
+venv/
+
+# Build outputs
+dist/
+build/
+
+# Reports
+reports/
+
+# OS
+.DS_Store

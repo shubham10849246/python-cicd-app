@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "python-cicd-demo"
+version = "1.0.0"
+description = "Demo Python app for CI/CD pipeline"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "fastapi==0.110.0",
+  "uvicorn[standard]==0.27.1",
+  "pydantic==2.6.1"
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
