@@ -1,0 +1,7 @@
+[run]
+relative_files = True
+source = src
+
+[report]
+omit =
+    tests/*

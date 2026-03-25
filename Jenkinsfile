@@ -71,9 +71,10 @@ pipeline {
 
           export PYTHONPATH=${PYTHONPATH}
           pytest -q tests/unit \
-            --junitxml=${REPORTS_DIR}/unit-junit.xml \
+            --junitxml=reports/unit-junit.xml \
             --cov=app \
-            --cov-report=xml:${REPORTS_DIR}/coverage.xml
+            --cov-report=xml:reports/coverage.xml \
+            --cov-config=.coveragerc
         '''
       }
       post {
