@@ -131,16 +131,19 @@ pipeline {
     }
 
 
-    stage('SonarQube Scan') {
+   stage('SonarQube Scan') {
   steps {
     withSonarQubeEnv('sonar') {
       sh(label: 'Sonar Scan', script: '''#!/bin/bash
         set -euo pipefail
 
-        # Create workspace scanner folder so Jenkins can read report-task.txt
+        # Clean old metadata if exists
+        rm -f report-task.txt
         mkdir -p .scannerwork
 
+        # Run scanner container with SAME user as Jenkins (fixes permission issue)
         docker run --rm \
+          --user "$(id -u):$(id -g)" \
           -e SONAR_HOST_URL="$SONAR_HOST_URL" \
           -e SONAR_TOKEN="$SONAR_AUTH_TOKEN" \
           -v "$WORKSPACE:/usr/src" \
@@ -150,12 +153,14 @@ pipeline {
           -Dsonar.tests=tests \
           -Dsonar.python.version=3.10 \
           -Dsonar.python.coverage.reportPaths=reports/coverage.xml \
-          -Dsonar.working.directory=/usr/src/.scannerwork \
-          -Dsonar.scanner.metadataFilePath=/usr/src/.scannerwork/report-task.txt
+          -Dsonar.scanner.metadataFilePath=/usr/src/report-task.txt
 
-        echo "---- Debug: show report-task.txt ----"
-        ls -la .scannerwork || true
-        cat .scannerwork/report-task.txt || true
+        # Put metadata in .scannerwork also (some Jenkins setups expect it there)
+        cp -f report-task.txt .scannerwork/report-task.txt
+
+        echo "---- Debug: report-task.txt ----"
+        ls -la report-task.txt .scannerwork/report-task.txt
+        cat report-task.txt
       ''')
     }
   }
