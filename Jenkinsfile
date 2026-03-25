@@ -130,23 +130,36 @@ pipeline {
       }
     }
 
+
     stage('SonarQube Scan') {
-      steps {
-        withSonarQubeEnv('sonar') {
-          sh '''
-            docker run --rm \
-              -e SONAR_HOST_URL=$SONAR_HOST_URL \
-              -e SONAR_TOKEN=$SONAR_AUTH_TOKEN \
-              -v "$WORKSPACE:/usr/src" \
-              sonarsource/sonar-scanner-cli \
-              -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
-              -Dsonar.sources=src \
-              -Dsonar.tests=tests \
-              -Dsonar.python.coverage.reportPaths=reports/coverage.xml
-          '''
-        }
-      }
+  steps {
+    withSonarQubeEnv('sonar') {
+      sh(label: 'Sonar Scan', script: '''#!/bin/bash
+        set -euo pipefail
+
+        # Create workspace scanner folder so Jenkins can read report-task.txt
+        mkdir -p .scannerwork
+
+        docker run --rm \
+          -e SONAR_HOST_URL="$SONAR_HOST_URL" \
+          -e SONAR_TOKEN="$SONAR_AUTH_TOKEN" \
+          -v "$WORKSPACE:/usr/src" \
+          sonarsource/sonar-scanner-cli:latest \
+          -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
+          -Dsonar.sources=src \
+          -Dsonar.tests=tests \
+          -Dsonar.python.version=3.10 \
+          -Dsonar.python.coverage.reportPaths=reports/coverage.xml \
+          -Dsonar.working.directory=/usr/src/.scannerwork \
+          -Dsonar.scanner.metadataFilePath=/usr/src/.scannerwork/report-task.txt
+
+        echo "---- Debug: show report-task.txt ----"
+        ls -la .scannerwork || true
+        cat .scannerwork/report-task.txt || true
+      ''')
     }
+  }
+}
 
     stage('Quality Gate') {
       steps {
