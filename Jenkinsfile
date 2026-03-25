@@ -14,7 +14,6 @@ pipeline {
     SONAR_HOST_URL = "http://13.235.95.236:9000"
     SONAR_PROJECT_KEY = "python-cicd-demo"
     NEXUS_REGISTRY = "10.0.13.79:8082"
-    IMAGE_NAME = "python-cicd-demo"
   }
 
   stages {
