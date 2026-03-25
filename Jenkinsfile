@@ -67,7 +67,7 @@ pipeline {
           . ${VENV_DIR}/bin/activate
 
           export PYTHONPATH=${PYTHONPATH}
-          pytest -q src/tests/unit \
+          pytest -q tests/unit \
             --junitxml=${REPORTS_DIR}/unit-junit.xml \
             --cov=app \
             --cov-report=xml:${REPORTS_DIR}/coverage.xml
@@ -88,7 +88,7 @@ pipeline {
           . ${VENV_DIR}/bin/activate
 
           export PYTHONPATH=${PYTHONPATH}
-          pytest -q src/tests/functional \
+          pytest -q tests/functional \
             --junitxml=${REPORTS_DIR}/functional-junit.xml
         '''
       }
@@ -140,7 +140,7 @@ pipeline {
           # Run k6 using docker (no need to install k6 on agent)
           docker run --rm \
             -e TARGET_URL=http://127.0.0.1:${HOST_PORT} \
-            -i grafana/k6 run - < src/perf/k6-script.js
+            -i grafana/k6 run - < perf/k6-script.js
 
           # Stop and remove container
           docker rm -f $CID
