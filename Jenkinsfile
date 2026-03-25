@@ -130,21 +130,18 @@ pipeline {
       }
     }
 
-
     stage('SonarQube Scan') {
+  when { expression { return !params.SKIP_SONAR } }
   steps {
     withSonarQubeEnv('sonar') {
       sh(label: 'Sonar Scan', script: '''#!/bin/bash
         set -euo pipefail
 
-        # Ensure folders exist in workspace and are writable by Jenkins user
         mkdir -p .scannerwork .sonar
-        chmod -R u+rwX .scannerwork .sonar
 
-        # Run scanner container as Jenkins UID/GID (avoids workspace permission issues)
-        # Move Sonar cache to /tmp/sonar (writable) and mount it from workspace (.sonar)
         docker run --rm \
           --user "$(id -u):$(id -g)" \
+          --tmpfs /tmp:rw,exec,nosuid,size=1g,mode=1777 \
           -e SONAR_HOST_URL="$SONAR_HOST_URL" \
           -e SONAR_TOKEN="$SONAR_AUTH_TOKEN" \
           -e SONAR_USER_HOME="/tmp/sonar" \
@@ -158,13 +155,13 @@ pipeline {
           -Dsonar.python.coverage.reportPaths=reports/coverage.xml \
           -Dsonar.scanner.metadataFilePath=/usr/src/.scannerwork/report-task.txt
 
-        echo "---- report-task.txt created? ----"
         ls -la .scannerwork || true
         cat .scannerwork/report-task.txt || true
       ''')
     }
   }
 }
+
 
     stage('Quality Gate') {
       steps {
