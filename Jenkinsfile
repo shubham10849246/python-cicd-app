@@ -7,14 +7,12 @@ pipeline {
   }
 
   environment {
-    // Keep everything inside workspace
     VENV_DIR = ".venv"
     PYTHONPATH = "${WORKSPACE}/src"
     IMAGE_NAME = "python-cicd-demo"
     REPORTS_DIR = "reports"
     SONAR_HOST_URL = "http://13.235.95.236:9000"
     SONAR_PROJECT_KEY = "python-cicd-demo"
-
   }
 
   stages {
@@ -37,10 +35,8 @@ pipeline {
           set -e
           python3 -m venv ${VENV_DIR}
           . ${VENV_DIR}/bin/activate
-
-          python -m pip install --upgrade pip
+          pip install --upgrade pip
           pip install -r requirements.txt -r requirements-dev.txt
-
           mkdir -p ${REPORTS_DIR}
         '''
       }
@@ -51,7 +47,6 @@ pipeline {
         sh '''
           set -e
           . ${VENV_DIR}/bin/activate
-
           python -m build
           ls -lah dist/
         '''
@@ -68,9 +63,8 @@ pipeline {
         sh '''
           set -e
           . ${VENV_DIR}/bin/activate
-
           export PYTHONPATH=${PYTHONPATH}
-          pytest -q tests/unit \
+          pytest tests/unit \
             --junitxml=reports/unit-junit.xml \
             --cov=app \
             --cov-report=xml:reports/coverage.xml \
@@ -79,7 +73,7 @@ pipeline {
       }
       post {
         always {
-          junit allowEmptyResults: true, testResults: 'reports/unit-junit.xml'
+          junit testResults: 'reports/unit-junit.xml', allowEmptyResults: true
           archiveArtifacts artifacts: 'reports/coverage.xml', allowEmptyArchive: true
         }
       }
@@ -90,15 +84,14 @@ pipeline {
         sh '''
           set -e
           . ${VENV_DIR}/bin/activate
-
           export PYTHONPATH=${PYTHONPATH}
-          pytest -q tests/functional \
+          pytest tests/functional \
             --junitxml=${REPORTS_DIR}/functional-junit.xml
         '''
       }
       post {
         always {
-          junit allowEmptyResults: true, testResults: 'reports/functional-junit.xml'
+          junit testResults: 'reports/functional-junit.xml', allowEmptyResults: true
         }
       }
     }
@@ -107,104 +100,73 @@ pipeline {
       steps {
         script {
           env.GIT_SHA = sh(script: "git rev-parse --short HEAD", returnStdout: true).trim()
-          env.IMAGE_TAG = "${env.BUILD_NUMBER}-${env.GIT_SHA}"
+          env.IMAGE_TAG = "${BUILD_NUMBER}-${GIT_SHA}"
         }
         sh '''
           set -e
-          echo "Building image: ${IMAGE_NAME}:${IMAGE_TAG}"
           docker build -t ${IMAGE_NAME}:${IMAGE_TAG} .
-          docker images | head
         '''
       }
     }
 
-    stage('k6 Performance Test (auto start/stop container)') {
+    stage('k6 Performance Test') {
       steps {
         sh '''
           set -e
-
-          # Start container on random free port
           CID=$(docker run -d -p 0:8080 --name ${IMAGE_NAME}-perf-${BUILD_NUMBER} ${IMAGE_NAME}:${IMAGE_TAG})
+          HOST_PORT=$(docker port $CID 8080 | awk -F: '{print $2}')
 
-          # Get mapped host port for container 8080
-          HOST_PORT=$(docker port $CID 8080/tcp | awk -F: '{print $2}')
-          echo "Container started: $CID"
-          echo "App is available at: http://127.0.0.1:${HOST_PORT}"
-
-          # Wait until app is healthy (max 30 seconds)
           for i in $(seq 1 30); do
-            if curl -s http://127.0.0.1:${HOST_PORT}/health | grep -q UP; then
-              echo "✅ App is UP"
-              break
-            fi
-            echo "Waiting for app... ($i)"
+            curl -s http://127.0.0.1:${HOST_PORT}/health && break
             sleep 1
           done
 
-          # Run k6 using docker (no need to install k6 on agent)
           docker run --rm \
             -e TARGET_URL=http://127.0.0.1:${HOST_PORT} \
             -i grafana/k6 run - < perf/k6-script.js
 
-          # Stop and remove container
           docker rm -f $CID
         '''
       }
-      post {
-        always {
-          // Extra safety cleanup if container still exists
+    }
+
+    stage('SonarQube Scan') {
+      steps {
+        withSonarQubeEnv('sonar') {
           sh '''
-            docker rm -f ${IMAGE_NAME}-perf-${BUILD_NUMBER} >/dev/null 2>&1 || true
+            docker run --rm \
+              -e SONAR_HOST_URL=$SONAR_HOST_URL \
+              -e SONAR_TOKEN=$SONAR_AUTH_TOKEN \
+              -v "$WORKSPACE:/usr/src" \
+              sonarsource/sonar-scanner-cli \
+              -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
+              -Dsonar.sources=src \
+              -Dsonar.tests=tests \
+              -Dsonar.python.coverage.reportPaths=reports/coverage.xml
           '''
         }
       }
     }
 
-    
-    stage('SonarQube Scan') {
-  steps {
-    // IMPORTANT: This wrapper is required for waitForQualityGate()
-    withSonarQubeEnv('sonar') {
-      sh(label: 'Sonar Scan', script: '''#!/bin/bash
-        set -euo pipefail
-
-        # SONAR_HOST_URL and SONAR_AUTH_TOKEN are provided by withSonarQubeEnv()
-        # We pass them into docker sonar-scanner container.
-        docker run --rm \
-          -e SONAR_HOST_URL="$SONAR_HOST_URL" \
-          -e SONAR_TOKEN="$SONAR_AUTH_TOKEN" \
-          -v "$WORKSPACE:/usr/src" \
-          sonarsource/sonar-scanner-cli:latest \
-          -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
-          -Dsonar.sources=src \
-          -Dsonar.tests=tests \
-          -Dsonar.python.version=3.10 \
-          -Dsonar.python.coverage.reportPaths=reports/coverage.xml
-      ''')
+    stage('Quality Gate') {
+      steps {
+        timeout(time: 5, unit: 'MINUTES') {
+          waitForQualityGate abortPipeline: true
+        }
+      }
     }
   }
-}
-
-stage('Quality Gate') {
-  steps {
-    timeout(time: 5, unit: 'MINUTES') {
-      // abortPipeline:true makes job FAIL if gate FAILS
-      waitForQualityGate abortPipeline: true
-    }
-  }
-}
 
   post {
     success {
-      echo "✅ CI completed (wheel + tests + perf) successfully."
-      echo "Next we will add Sonar, Nexus, JFrog, ArgoCD stages."
+      echo "✅ CI completed successfully"
     }
     failure {
-      echo "❌ Pipeline failed. Check stage logs for exact reason."
+      echo "❌ Pipeline failed"
     }
     always {
-      // Clean workspace venv to save disk if needed
       sh 'rm -rf ${VENV_DIR} || true'
     }
   }
 }
+``
