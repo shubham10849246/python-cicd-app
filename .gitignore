@@ -22,3 +22,4 @@ reports/
 # OS
 .DS_Store
 .scannerwork/
+.sonar/
