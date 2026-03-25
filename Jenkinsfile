@@ -12,6 +12,9 @@ pipeline {
     PYTHONPATH = "${WORKSPACE}/src"
     IMAGE_NAME = "python-cicd-demo"
     REPORTS_DIR = "reports"
+    SONAR_HOST_URL = "http://13.235.95.236:9000"
+    SONAR_PROJECT_KEY = "python-cicd-demo"
+
   }
 
   stages {
@@ -155,6 +158,35 @@ pipeline {
         }
       }
     }
+
+    stage('SonarQube Scan') {
+  steps {
+    withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
+      sh '''
+        set -euxo pipefail
+
+        # Sonar scanner via docker (no local install needed)
+        docker run --rm \
+          -e SONAR_HOST_URL=${SONAR_HOST_URL} \
+          -e SONAR_TOKEN=${SONAR_TOKEN} \
+          -v "$WORKSPACE:/usr/src" \
+          sonarsource/sonar-scanner-cli \
+          -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
+          -Dsonar.sources=src \
+          -Dsonar.tests=tests \
+          -Dsonar.python.coverage.reportPaths=reports/coverage.xml
+      '''
+    }
+  }
+}
+
+stage('Quality Gate') {
+  steps {
+    timeout(time: 5, unit: 'MINUTES') {
+      waitForQualityGate abortPipeline: true
+    }
+  }
+}
   }
 
   post {
