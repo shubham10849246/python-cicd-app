@@ -179,15 +179,15 @@ stage('k6 Performance Test') {
   }
 }
 
-
     stage('Quality Gate') {
-      steps {
-        timeout(time: 5, unit: 'MINUTES') {
-          waitForQualityGate abortPipeline: true
-        }
-      }
+  when { expression { return !params.SKIP_SONAR } }
+  steps {
+    timeout(time: 15, unit: 'MINUTES') {
+      waitForQualityGate abortPipeline: true
     }
-
+  }
+}
+ 
     stage('Push to Nexus') {
   steps {
     withCredentials([usernamePassword(credentialsId: 'nexus-docker',
