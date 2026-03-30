@@ -97,28 +97,6 @@ pipeline {
       }
     }
 
-    
-    stage('k6 Performance Test') {
-      steps {
-        sh '''
-          set -e
-          CID=$(docker run -d -p 0:8080 --name ${IMAGE_NAME}-perf-${BUILD_NUMBER} ${IMAGE_NAME}:${IMAGE_TAG})
-          HOST_PORT=$(docker port $CID 8080 | awk -F: '{print $2}')
-
-          for i in $(seq 1 30); do
-            curl -s http://127.0.0.1:${HOST_PORT}/health && break
-            sleep 1
-          done
-
-          docker run --rm \
-            -e TARGET_URL=http://127.0.0.1:${HOST_PORT} \
-            -i grafana/k6 run - < perf/k6-script.js
-
-          docker rm -f $CID
-        '''
-      }
-    }
-
 
     stage('Docker Build') {
   steps {
@@ -128,7 +106,43 @@ pipeline {
     }
     sh '''#!/bin/bash
       set -e
+      echo "Building image: ${IMAGE_NAME}:${TAG}"
       docker build -t ${IMAGE_NAME}:${TAG} .
+    '''
+  }
+}
+
+stage('k6 Performance Test') {
+  steps {
+    sh '''#!/bin/bash
+      set -euo pipefail
+
+      # Run the newly built image
+      CID=$(docker run -d -p 0:8080 --name ${IMAGE_NAME}-perf-${BUILD_NUMBER} ${IMAGE_NAME}:${TAG})
+
+      # Always cleanup container even if test fails
+      cleanup() { docker rm -f "$CID" >/dev/null 2>&1 || true; }
+      trap cleanup EXIT
+
+      # Find mapped host port (important: use 8080/tcp)
+      HOST_PORT=$(docker port "$CID" 8080/tcp | awk -F: '{print $2}')
+      echo "Container: $CID"
+      echo "App URL: http://127.0.0.1:${HOST_PORT}"
+
+      # Wait for health endpoint (max 30 seconds)
+      for i in $(seq 1 30); do
+        if curl -s http://127.0.0.1:${HOST_PORT}/health | grep -q UP; then
+          echo "✅ App is UP"
+          break
+        fi
+        echo "Waiting for app... ($i)"
+        sleep 1
+      done
+
+      # Run k6 test (script is in repo root perf/)
+      docker run --rm \
+        -e TARGET_URL=http://127.0.0.1:${HOST_PORT} \
+        -i grafana/k6 run - < perf/k6-script.js
     '''
   }
 }
