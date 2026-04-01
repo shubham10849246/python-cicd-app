@@ -6,6 +6,12 @@ pipeline {
     buildDiscarder(logRotator(numToKeepStr: '20'))
   }
 
+  
+parameters {
+  booleanParam(name: 'SKIP_SONAR', defaultValue: true, description: 'Skip SonarQube + Quality Gate')
+}
+
+
   environment {
     VENV_DIR = ".venv"
     PYTHONPATH = "${WORKSPACE}/src"
@@ -147,6 +153,60 @@ stage('k6 Performance Test') {
   }
 }
 
+    stage('Push to ECR') {
+  steps {
+    withCredentials([usernamePassword(credentialsId: 'aws-ecr-creds',
+      usernameVariable: 'AWS_ACCESS_KEY_ID',
+      passwordVariable: 'AWS_SECRET_ACCESS_KEY'
+    )]) {
+      sh '''#!/bin/bash
+        set -e
+        export AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+        export AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+        export AWS_DEFAULT_REGION=ap-south-1
+
+        ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+        ECR_REGISTRY="${ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com"
+        ECR_URI="${ECR_REGISTRY}/python-cicd-demo"
+
+        aws ecr get-login-password --region ${AWS_DEFAULT_REGION} | docker login --username AWS --password-stdin ${ECR_REGISTRY}
+
+        docker tag ${IMAGE_NAME}:${TAG} ${ECR_URI}:${TAG}
+        docker push ${ECR_URI}:${TAG}
+
+        echo "ECR_URI=${ECR_URI}" > ecr.env
+        echo "TAG=${TAG}" >> ecr.env
+      '''
+    }
+  }
+}
+   
+    stage('CD: Update GitOps repo') {
+  steps {
+    withCredentials([usernamePassword(credentialsId: 'gitops-creds',
+      usernameVariable: 'GIT_USER',
+      passwordVariable: 'GIT_TOKEN'
+    )]) {
+      sh '''#!/bin/bash
+        set -e
+        source ecr.env
+
+        rm -rf gitops
+        git clone https://${GIT_USER}:${GIT_TOKEN}@github.com/shubham10849246/python-cicd-gitops.git gitops
+        cd gitops
+
+        sed -i "s|image:.*|image: ${ECR_URI}:${TAG}|g" deployment.yaml
+
+        git config user.email "jenkins@ci.local"
+        git config user.name "jenkins-ci"
+        git add deployment.yaml
+        git commit -m "Deploy ${TAG}" || true
+        git push
+      '''
+    }
+  }
+}
+
     stage('SonarQube Scan') {
   when { expression { return !params.SKIP_SONAR } }
   steps {
@@ -188,33 +248,6 @@ stage('k6 Performance Test') {
   }
 }
 
-
-    stage('Push to ECR') {
-  steps {
-    withCredentials([usernamePassword(credentialsId: 'aws-ecr-creds',
-      usernameVariable: 'AWS_ACCESS_KEY_ID',
-      passwordVariable: 'AWS_SECRET_ACCESS_KEY'
-    )]) {
-      sh '''#!/bin/bash
-        set -e
-        export AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
-        export AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
-        export AWS_DEFAULT_REGION=ap-south-1
-
-        ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-        ECR_URI="${ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/python-cicd-demo"
-
-        aws ecr get-login-password --region ${AWS_DEFAULT_REGION} | docker login --username AWS --password-stdin ${ECR_URI}
-
-        docker tag ${IMAGE_NAME}:${TAG} ${ECR_URI}:${TAG}
-        docker push ${ECR_URI}:${TAG}
-
-        echo "ECR_URI=${ECR_URI}" > ecr.env
-        echo "TAG=${TAG}" >> ecr.env
-      '''
-    }
-  }
-}
  
     stage('Push to Nexus') {
   steps {
@@ -237,32 +270,6 @@ stage('k6 Performance Test') {
     }
   }
 }
-
-   stage('CD: Update GitOps repo') {
-  steps {
-    withCredentials([usernamePassword(credentialsId: 'gitops-creds',
-      usernameVariable: 'GIT_USER',
-      passwordVariable: 'GIT_TOKEN'
-    )]) {
-      sh '''#!/bin/bash
-        set -e
-
-        source ecr.env
-        rm -rf gitops
-        git clone https://${GIT_USER}:${GIT_TOKEN}@github.com/<YOUR-USERNAME>/python-cicd-gitops.git gitops
-        cd gitops
-
-        # Update image line in deployment.yaml
-        sed -i "s|image:.*|image: ${ECR_URI}:${TAG}|g" deployment.yaml
-
-        git config user.email "jenkins@ci.local"
-        git config user.name "jenkins-ci"
-        git add deployment.yaml
-        git commit -m "Deploy ${TAG}" || true
-        git push
-      '''
-    }
-  }
 }	
   }
 
