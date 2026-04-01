@@ -187,6 +187,34 @@ stage('k6 Performance Test') {
     }
   }
 }
+
+
+    stage('Push to ECR') {
+  steps {
+    withCredentials([usernamePassword(credentialsId: 'aws-ecr-creds',
+      usernameVariable: 'AWS_ACCESS_KEY_ID',
+      passwordVariable: 'AWS_SECRET_ACCESS_KEY'
+    )]) {
+      sh '''#!/bin/bash
+        set -e
+        export AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+        export AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+        export AWS_DEFAULT_REGION=ap-south-1
+
+        ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+        ECR_URI="${ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/python-cicd-demo"
+
+        aws ecr get-login-password --region ${AWS_DEFAULT_REGION} | docker login --username AWS --password-stdin ${ECR_URI}
+
+        docker tag ${IMAGE_NAME}:${TAG} ${ECR_URI}:${TAG}
+        docker push ${ECR_URI}:${TAG}
+
+        echo "ECR_URI=${ECR_URI}" > ecr.env
+        echo "TAG=${TAG}" >> ecr.env
+      '''
+    }
+  }
+}
  
     stage('Push to Nexus') {
   steps {
