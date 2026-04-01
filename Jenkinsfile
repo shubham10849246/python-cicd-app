@@ -147,6 +147,28 @@ stage('k6 Performance Test') {
   }
 }
 
+        stage('Push to Nexus') {
+  steps {
+    withCredentials([usernamePassword(credentialsId: 'nexus-docker',
+      usernameVariable: 'NEXUS_USER',
+      passwordVariable: 'NEXUS_PASS')]) {
+
+      sh '''#!/bin/bash
+        set -e
+
+        echo "$NEXUS_PASS" | docker login -u "$NEXUS_USER" --password-stdin ${NEXUS_REGISTRY}
+
+        # Tag as registry/image:tag (no repo name in path)
+        docker tag ${IMAGE_NAME}:${TAG} ${NEXUS_REGISTRY}/${IMAGE_NAME}:${TAG}
+
+        docker push ${NEXUS_REGISTRY}/${IMAGE_NAME}:${TAG}
+
+        docker logout ${NEXUS_REGISTRY} || true
+      '''
+    }
+  }
+}
+
     stage('Push to ECR') {
   steps {
     withCredentials([usernamePassword(credentialsId: 'aws-ecr-creds',
@@ -231,38 +253,14 @@ stage('k6 Performance Test') {
       ''')
     }
   }
-}
-
- 
-    stage('Push to Nexus') {
-  steps {
-    withCredentials([usernamePassword(credentialsId: 'nexus-docker',
-      usernameVariable: 'NEXUS_USER',
-      passwordVariable: 'NEXUS_PASS')]) {
-
-      sh '''#!/bin/bash
-        set -e
-
-        echo "$NEXUS_PASS" | docker login -u "$NEXUS_USER" --password-stdin ${NEXUS_REGISTRY}
-
-        # Tag as registry/image:tag (no repo name in path)
-        docker tag ${IMAGE_NAME}:${TAG} ${NEXUS_REGISTRY}/${IMAGE_NAME}:${TAG}
-
-        docker push ${NEXUS_REGISTRY}/${IMAGE_NAME}:${TAG}
-
-        docker logout ${NEXUS_REGISTRY} || true
-      '''
-    }
-  }
-}
-	
+}	
   }
 
     
 
   post {
     success {
-      echo "✅ CI completed successfully"
+      echo "✅ CI/CD completed successfully"
     }
     failure {
       echo "❌ Pipeline failed"
