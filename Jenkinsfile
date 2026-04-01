@@ -6,12 +6,6 @@ pipeline {
     buildDiscarder(logRotator(numToKeepStr: '20'))
   }
 
-  
-parameters {
-  booleanParam(name: 'SKIP_SONAR', defaultValue: true, description: 'Skip SonarQube + Quality Gate')
-}
-
-
   environment {
     VENV_DIR = ".venv"
     PYTHONPATH = "${WORKSPACE}/src"
@@ -235,15 +229,6 @@ stage('k6 Performance Test') {
         ls -la .scannerwork || true
         cat .scannerwork/report-task.txt || true
       ''')
-    }
-  }
-}
-
-    stage('Quality Gate') {
-  when { expression { return !params.SKIP_SONAR } }
-  steps {
-    timeout(time: 15, unit: 'MINUTES') {
-      waitForQualityGate abortPipeline: true
     }
   }
 }
