@@ -236,6 +236,33 @@ stage('k6 Performance Test') {
       '''
     }
   }
+}
+
+   stage('CD: Update GitOps repo') {
+  steps {
+    withCredentials([usernamePassword(credentialsId: 'gitops-creds',
+      usernameVariable: 'GIT_USER',
+      passwordVariable: 'GIT_TOKEN'
+    )]) {
+      sh '''#!/bin/bash
+        set -e
+
+        source ecr.env
+        rm -rf gitops
+        git clone https://${GIT_USER}:${GIT_TOKEN}@github.com/<YOUR-USERNAME>/python-cicd-gitops.git gitops
+        cd gitops
+
+        # Update image line in deployment.yaml
+        sed -i "s|image:.*|image: ${ECR_URI}:${TAG}|g" deployment.yaml
+
+        git config user.email "jenkins@ci.local"
+        git config user.name "jenkins-ci"
+        git add deployment.yaml
+        git commit -m "Deploy ${TAG}" || true
+        git push
+      '''
+    }
+  }
 }	
   }
 
